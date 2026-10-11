@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0e1116" media="(prefers-color-scheme: dark)" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="我的课表" />
+<meta name="format-detection" content="telephone=no" />
+<title>我的课表</title>
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icons/icon-180.png" />
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+  <div class="stickyhead" id="stickyHead">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo" id="brandLogo"><img src="icons/icon.svg" alt="" /></div>
+        <div class="brand-meta">
+          <div class="brand-top">
+            <h1 id="brandName">我的课表</h1>
+            <span class="demo-badge hidden" id="demoBadge">示例课表</span>
+          </div>
+          <p id="brandTerm">加载中…</p>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="iconbtn hidden" id="btnInstall" title="安装到桌面" aria-label="安装到桌面"></button>
+        <button class="iconbtn" id="btnRemind" title="上课提醒" aria-label="上课提醒"></button>
+        <button class="iconbtn" id="btnSettings" title="设置" aria-label="设置"></button>
+      </div>
+    </header>
+  </div>
+
+  <div class="weekbar">
+    <button class="navbtn" id="prevWeek" aria-label="上一周">&#8249;</button>
+    <button class="week-pill" id="weekPill">
+      <span class="w" id="weekLabel">第 1 周</span>
+      <span class="sub" id="weekRange"></span>
+      <span class="weekprog" id="weekProg"><i id="weekProgBar"></i></span>
+    </button>
+    <button class="navbtn" id="nextWeek" aria-label="下一周">&#8250;</button>
+  </div>
+
+  <button class="updatebar hidden" id="updateBar"></button>
+
+  <div class="viewswitch" id="viewSwitch">
+    <span class="ind"></span>
+    <button data-view="day" class="active">日视图</button>
+    <button data-view="week">周视图</button>
+  </div>
+
+  <div class="daytabs" id="dayTabs"></div>
+
+  <div class="summary" id="summary"></div>
+
+  <main>
+    <section id="dayView" class="view"></section>
+    <section id="weekView" class="view hidden"></section>
+  </main>
+</div>
+
+<button class="fab" id="fabAdd" title="添加自定义事件" aria-label="添加自定义事件"></button>
+
+<div class="overlay" id="overlay"></div>
+
+<!-- 课程详情：电影票弹层 -->
+<div class="ticket-modal" id="ticketModal"></div>
+
+<!-- 课程详情 -->
+<div class="sheet" id="sheetDetail">
+  <div class="handle"></div>
+  <div class="shead">
+    <div>
+      <h2 id="dTitle"></h2>
+      <div class="sub" id="dSub"></div>
+    </div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body">
+    <div class="kv" id="dKv"></div>
+    <div class="actions" id="dActions"></div>
+  </div>
+</div>
+
+<!-- 调课 / 编辑 -->
+<div class="sheet" id="sheetEdit">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2 id="eTitle">调整这节课</h2><div class="sub" id="eSub"></div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="eBody"></div>
+  <div class="sheet-foot" id="eFoot"></div>
+</div>
+
+<!-- 添加：选择类型 -->
+<div class="sheet" id="sheetAdd">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>添加</h2><div class="sub">选一个吧</div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body">
+    <div class="actions">
+      <button class="btn primary row" id="addCourse">添加课程（每周固定）</button>
+      <button class="btn ghost row" id="addEvent">添加临时事件（只此一次）</button>
+    </div>
+    <div class="hint">「课程」会按周次重复出现在课表里；「临时事件」只出现在指定日期，例如组会、讲座、补课。</div>
+  </div>
+</div>
+
+<!-- 课程时间自定义 -->
+<div class="sheet" id="sheetTimes">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>课程时间</h2><div class="sub">调整每节课的上下课时间</div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="timeBody"></div>
+</div>
+
+<!-- 节假日 / 调休 -->
+<div class="sheet" id="sheetHoli">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>节假日 / 调休</h2><div class="sub">这些日期不上课（顺延/放假）</div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="holiBody"></div>
+</div>
+
+<!-- 更新内容 -->
+<div class="sheet" id="sheetChangelog">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>更新内容</h2><div class="sub" id="clVer"></div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="clBody"></div>
+  <div class="sheet-foot" id="clFoot">
+    <button class="btn ghost" id="clOk">知道了</button>
+    <button class="btn primary" id="clReload">刷新以应用</button>
+  </div>
+</div>
+
+<!-- 课程管理 -->
+<div class="sheet" id="sheetCourses">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>课程管理</h2><div class="sub" id="cmSub"></div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="cmBody"></div>
+</div>
+
+<!-- 隐藏：开发者码导入 -->
+<div class="sheet" id="sheetDev">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>开发者代码</h2><div class="sub" id="devSub">输入后可载入你的个人课表</div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body">
+    <div class="field"><label>开发者代码</label><input id="devCode" type="password" autocomplete="off" placeholder="请输入开发者代码" /></div>
+    <div class="actions">
+      <button class="btn primary row" id="devGo">导 入</button>
+      <button class="btn ghost row" id="devOut">退出个人模式（恢复示例）</button>
+    </div>
+    <div class="hint" id="devHint"></div>
+  </div>
+</div>
+
+<!-- 设置 -->
+<div class="sheet" id="sheetSettings">
+  <div class="handle"></div>
+  <div class="shead">
+    <div><h2>设置</h2><div class="sub">数据保存在本机，断网可用</div></div>
+    <button class="close" data-close>&#10005;</button>
+  </div>
+  <div class="body" id="sBody"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="js/core.js"></script>
+<script src="js/holidays.js"></script>
+<script src="js/data.js"></script>
+<script src="js/private.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
