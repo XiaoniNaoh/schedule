@@ -1,10 +1,11 @@
 /* 我的课表 · Service Worker —— 离线缓存 */
-const VERSION = "v4.15.0";
+const VERSION = "v4.16.0";
 const CACHE = "course-schedule-" + VERSION;
 const ASSETS = [
   "./",
   "./index.html",
   "./css/style.css",
+  "./js/motion.js",
   "./js/core.js",
   "./js/holidays.js",
   "./js/data.js",

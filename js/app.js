@@ -2,8 +2,16 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "4.3.0";
+  const APP_VERSION = "4.4.0";
   const CHANGELOG = [
+    { v: "4.4.0", items: [
+      "弹层与课程小票可下拉关闭：跟手、越界有阻力、松手按速度决定去留，随时能反悔",
+      "切换日/周与日期标签改为弹簧驱动，可被中途打断并从当前位置继续",
+      "滚动时顶栏出现渐隐边缘、副标题收起，内容区不被硬分割线切一刀",
+      "排版统一：字号/行高/字距成组定义，数字等宽，间距改用 4px 基准",
+      "去掉循环闪烁类装饰（脉冲、扫光、呼吸点），改为一次性入场与连续进度",
+      "按压反馈改为按下即生效、拖开即取消；支持减少动态/减少透明度/提高对比",
+    ] },
     { v: "4.3.0", items: ["重做添加/编辑课程界面：分组行更紧凑清爽", "保存按钮常驻底部，手机上无需滚动即可提交"] },
     { v: "4.2.0", items: ["预设调色板扩充到 17 色，色相覆盖更全", "编辑课程界面重排：教师/地点并排、节次与周次分区更清晰、操作按钮更顺手"] },
     { v: "4.0.2", items: ["更新界面重做：只突出当前版本，历史更新折叠收纳", "「刷新以应用」按钮固定在底部，无需滚动到底"] },
@@ -89,11 +97,21 @@
     return base.concat(MY);
   };
   const isPersonal = () => !!read(LS.personal, null);
-  function applyIntensity() { document.documentElement.dataset.intensity = "rich"; }
+  // 视觉强度：std/rich 即当前观感；min 给省电或极简场景（去毛玻璃、去阴影、去动效）
+  function applyIntensity() { document.documentElement.dataset.intensity = settings.intensity || "std"; }
   loadData();
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
+  // 手势与弹簧（js/motion.js）。缺失时降级为"直接到位"，不影响任何功能
+  const M = window.CS_MOTION || {
+    project: (v) => v / 2,
+    rubberband: (o) => o * .3,
+    reduced: () => false,
+    springBy: (r, b, o) => { if (o.onUpdate) o.onUpdate(o.to); if (o.onDone) o.onDone(); return { stop: () => ({ value: o.to, velocity: 0 }) }; },
+    draggable: () => () => {},
+    pressable: () => {}
+  };
 
   /* ---------- icons ---------- */
   const I = {
@@ -330,15 +348,291 @@
 
   /* ---------- sheets ---------- */
   function lockScroll(on) { document.documentElement.style.overflow = on ? "hidden" : ""; document.body.style.overflow = on ? "hidden" : ""; }
-  function openSheet(id) { $("#overlay").classList.add("show"); $("#" + id).classList.add("show"); lockScroll(true); }
-  function closeSheets() {
-    $$(".sheet").forEach((s) => s.classList.remove("show"));
-    const tm = $("#ticketModal"); if (tm) tm.classList.remove("show");
-    $("#overlay").classList.remove("show");
+
+  /* ---------- 弹层位移：弹簧驱动 + 下拉关闭 ----------
+     依据 Apple《Designing Fluid Interfaces》：
+     从"当前屏幕上的值"开始、跟手 1:1（含抓取偏移）、越界渐进阻力、
+     松手按速度投影决定去留、任何时刻都能被抓住并反向。 */
+  function setSheetY(el, y) { el._y = y; el.style.transform = "translate3d(-50%, " + y + "px, 0)"; }
+  function stopMotion(el) { if (el && el._stop) { el._stop(); el._stop = null; } }
+  function runMotion(el, sp) { stopMotion(el); el._stop = sp.stop; return sp; }
+  const sheetHeight = (el) => el.offsetHeight || 600;
+
+  function animateSheet(el, to, velocity, done) {
+    const finish = function () { el.classList.remove("moving"); if (done) done(); };
+    if (M.reduced()) { el.classList.remove("moving"); setSheetY(el, to); finish(); return; }
+    el.classList.add("moving");
+    // 抓取中被打断时，从实时位置与实时速度接着走，不跳变
+    runMotion(el, M.springBy(0.34, 0, {
+      from: el._y == null ? to : el._y,
+      to: to,
+      velocity: velocity || 0,
+      onUpdate: function (v) { setSheetY(el, v); },
+      onDone: finish
+    }));
+  }
+
+  function openSheetEl(el) {
+    if (!el) return;
+    document.documentElement.classList.add("sheet-open");
+    el.classList.add("show");
+    el._y = null;
+    if (M.reduced()) { setSheetY(el, 0); el.style.transform = ""; return; }
+    setSheetY(el, sheetHeight(el));           // 先落到屏幕外，再从那里上来
+    animateSheet(el, 0, 0, function () { el.style.transform = ""; el._y = 0; });
+  }
+
+  function closeSheetEl(el, velocity, done) {
+    if (!el || !el.classList.contains("show")) { if (done) done(); return; }
+    if (M.reduced()) {
+      el.classList.remove("show", "moving");
+      el.style.transform = ""; el._y = null;
+      if (done) done();
+      return;
+    }
+    animateSheet(el, sheetHeight(el), velocity || 0, function () {
+      el.classList.remove("show");
+      el.style.transform = ""; el._y = null;
+      if (done) done();
+    });
+  }
+
+  function openSheet(id) {
+    const el = $("#" + id);
+    const ov = $("#overlay");
+    if (ov) { ov.style.opacity = ""; ov.classList.add("show"); }
+    openSheetEl(el);
+    lockScroll(true);
+  }
+
+  // 最后一个弹层收完之后，才让主内容回到原处
+  function afterOverlaysClosed() {
+    if (document.querySelector(".sheet.show") || document.querySelector("#ticketModal.show")) return;
+    document.documentElement.classList.remove("sheet-open");
+    const ov = $("#overlay");
+    if (ov) { ov.classList.remove("show"); ov.style.opacity = ""; }
     lockScroll(false);
   }
+
+  function closeSheets() {
+    const open = $$(".sheet.show");
+    const tm = $("#ticketModal");
+    const tmOpen = !!(tm && tm.classList.contains("show"));
+    const ov = $("#overlay");
+    if (ov) { ov.classList.remove("show"); ov.style.opacity = ""; }
+    lockScroll(false);
+    if (!open.length && !tmOpen) { document.documentElement.classList.remove("sheet-open"); return; }
+    let pending = open.length + (tmOpen ? 1 : 0);
+    const done = function () { pending -= 1; if (pending <= 0) afterOverlaysClosed(); };
+    open.forEach(function (s) { closeSheetEl(s, 0, done); });
+    if (tmOpen) closeTicket(tm, 0, false, done);
+  }
+
+  /* 把手一带下拉即可关闭；正文区域照常滚动 */
+  function wireSheetDrag(el) {
+    M.draggable(el, {
+      axis: "y",
+      filter: function (e) {
+        if (!el.classList.contains("show")) return false;
+        const t = e.target;
+        if (!t || typeof t.closest !== "function") return false;
+        if (t.closest("button, input, select, textarea, a")) return false;
+        return !!t.closest(".handle, .shead");
+      },
+      onStart: function () {
+        stopMotion(el);
+        el._base = el._y == null ? 0 : el._y;
+        el.classList.add("moving");
+      },
+      onMove: function (d) {
+        const h = sheetHeight(el);
+        let y = el._base + d;
+        // 越界不是硬停，是越来越不跟手
+        if (y < 0) y = -M.rubberband(-y, h, .5);
+        else if (y > h) y = h + M.rubberband(y - h, h, .5);
+        setSheetY(el, y);
+        const ov = $("#overlay");
+        if (ov) ov.style.opacity = String(Math.max(0, 1 - (y / h) * 1.2));
+      },
+      onEnd: function (d, v) {
+        const h = sheetHeight(el);
+        const y = el._y == null ? 0 : el._y;
+        el.classList.remove("moving");
+        const ov = $("#overlay");
+        if (ov) ov.style.opacity = "";
+        // 用速度投影落点，而不是从松手位置就近判断
+        const projected = y + M.project(v, .998);
+        if (v > 620 || projected > h * .45) {
+          closeSheetEl(el, v, afterOverlaysClosed);
+        } else {
+          animateSheet(el, 0, v, function () { el.style.transform = ""; el._y = 0; });
+        }
+      }
+    });
+  }
+
   $("#overlay").addEventListener("click", closeSheets);
   $$("[data-close]").forEach((b) => b.addEventListener("click", closeSheets));
+
+  /* ---------- 课程小票：从被点的那张卡长出来，也可以下拉收回 ---------- */
+  const ticketHeight = (tk) => tk.offsetHeight || 420;
+  // 可见尺寸：矮视口下小票会整体等比缩小，拖拽的位移与判定都要按缩放后的尺寸来
+  function ticketMetrics(tk) {
+    const fit = tk._fit || 1;
+    return { fit: fit, h: ticketHeight(tk) * fit };
+  }
+  function ticketTransform(y, h, fit) {
+    const s = (fit || 1) * (1 - 0.06 * Math.min(1, Math.abs(y) / (h || 1)));
+    return "translate3d(0, " + y + "px, 0) scale(" + s.toFixed(4) + ")";
+  }
+  /* 小票保持一页：放不下时整体等比缩小装进视口。
+     注意不能靠 max-height 裁切——裁掉的部分缩放也救不回来，底部操作就够不到了。 */
+  function fitTicket(tk) {
+    if (!tk) return 1;
+    tk.style.setProperty("--tk-fit", "1");
+    const wrap = tk.parentElement;
+    let avail = window.innerHeight - 24;
+    if (wrap) {
+      const cs = getComputedStyle(wrap);
+      avail = wrap.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
+    }
+    const need = tk.offsetHeight;                 // 不裁切时，盒子高度就是内容高度
+    const fit = need > avail && need > 0 ? Math.max(0.74, avail / need) : 1;
+    const v = Math.round(fit * 1000) / 1000;
+    tk.style.setProperty("--tk-fit", String(v));
+    // 缩小的时候必须以中心为原点：原点若在被点卡片的位置，缩放会把卡片顶出视口边缘
+    if (v < 1) tk.style.setProperty("--from-y", "50%");
+    tk._fit = v;
+    return v;
+  }
+
+  function openTicket(tm, srcEl) {
+    const tk = tm.querySelector(".tk2");
+    // 空间一致性：小票从来源卡片的位置展开，而不是无来由地在屏幕中央放大
+    if (tk && srcEl && srcEl.getBoundingClientRect) {
+      // 量的时候先摘掉入场缩放，否则量到的是缩放后的盒子，原点会有偏差
+      tk.style.transform = "none";
+      const tr = tk.getBoundingClientRect();
+      const sr = srcEl.getBoundingClientRect();
+      if (tr.height) {
+        const y = Math.min(Math.max(sr.top + sr.height / 2 - tr.top, 0), tr.height);
+        tk.style.setProperty("--from-y", (y / tr.height * 100).toFixed(1) + "%");
+      }
+      tk.style.transform = "";
+    }
+    if (tk) { tk.style.transition = ""; tk.style.transform = ""; tk._y = 0; tk.classList.remove("moving"); }
+    const ov = $("#overlay");
+    if (ov) ov.classList.add("show");
+    lockScroll(true);
+    document.documentElement.classList.add("sheet-open");
+    void tm.offsetWidth;
+    tm.classList.add("show");
+    fitTicket(tk);
+  }
+
+  function closeTicket(tm, velocity, dragged, done) {
+    const tk = tm.querySelector(".tk2");
+    // 手指拖出去过：按手指的方向收走；否则按进场原路缩回（进出同一条路径）
+    if (!tk || M.reduced() || !dragged) {
+      if (tk) { tk.style.transition = ""; tk.style.transform = ""; tk.classList.remove("moving"); tk._y = 0; }
+      tm.classList.remove("show");
+      if (done) done();
+      return;
+    }
+    const m = ticketMetrics(tk);
+    stopMotion(tk);
+    tm.classList.remove("show");        // 淡出与收走同时发生
+    tk.style.transition = "none";
+    tk.classList.add("moving");
+    runMotion(tk, M.springBy(0.34, 0, {
+      from: tk._y == null ? 0 : tk._y,
+      to: m.h * 0.95,
+      velocity: velocity || 0,
+      onUpdate: function (v) { tk.style.transform = ticketTransform(v, m.h, m.fit); },
+      onDone: function () {
+        tk.style.transform = "";
+        tk.classList.remove("moving");
+        tk._y = 0;
+        // 下一帧再交还给 CSS 过渡，避免刚归位又补一段回弹
+        requestAnimationFrame(function () { tk.style.transition = ""; });
+        if (done) done();
+      }
+    }));
+  }
+
+  function wireTicketDrag(tm) {
+    M.draggable(tm, {
+      axis: "y",
+      filter: function (e) {
+        if (!tm.classList.contains("show")) return false;
+        const t = e.target;
+        if (!t || typeof t.closest !== "function") return false;
+        if (t.closest("button, input, select, textarea, a")) return false;
+        return !!t.closest(".tk2");
+      },
+      onStart: function () {
+        const tk = tm.querySelector(".tk2"); if (!tk) return;
+        stopMotion(tk);
+        tk.style.transition = "none";
+        tk.classList.add("moving");
+      },
+      onMove: function (d) {
+        const tk = tm.querySelector(".tk2"); if (!tk) return;
+        const m = ticketMetrics(tk);
+        let y = d;
+        if (y < 0) y = -M.rubberband(-y, m.h, .55);
+        else if (y > m.h) y = m.h + M.rubberband(y - m.h, m.h, .55);
+        tk._y = y;
+        tk.style.transform = ticketTransform(y, m.h, m.fit);
+      },
+      onEnd: function (d, v) {
+        const tk = tm.querySelector(".tk2"); if (!tk) return;
+        const m = ticketMetrics(tk);
+        const y = tk._y == null ? 0 : tk._y;
+        tk.classList.remove("moving");
+        const projected = y + M.project(v, .998);
+        if (v > 620 || projected > m.h * .38) { closeTicket(tm, v, true, afterOverlaysClosed); return; }
+        runMotion(tk, M.springBy(0.36, 0.08, {
+          from: y, to: 0, velocity: v,
+          onUpdate: function (val) { tk._y = val; tk.style.transform = ticketTransform(val, m.h, m.fit); },
+          onDone: function () { tk.style.transform = ""; tk.style.transition = ""; tk._y = 0; }
+        }));
+      }
+    });
+  }
+
+  /* ---------- 指示器：弹簧驱动，可被中途打断 ---------- */
+  function slideIndicator(el, x, w, animate) {
+    if (!el) return;
+    const st = el._slide || (el._slide = {});
+    // 打断上一段：拿它在屏幕上的当前值与速度，接着走（不是从目标值重新开始）
+    let liveX = null, liveV = 0;
+    if (st.stopX) { const r = st.stopX(); liveX = r.value; liveV = r.velocity; st.stopX = null; }
+    if (st.stopW) { st.stopW(); st.stopW = null; }
+    const toW = w == null ? null : w;
+    // 只有"第一次定位"或明确要求不动画时才直接落位
+    if (animate === false || st.x == null) {
+      st.x = x; st.w = toW;
+      el.style.transform = "translateX(" + x + "px)";
+      if (toW != null) el.style.width = toW + "px";
+      return;
+    }
+    const fromX = liveX == null ? st.x : liveX;
+    const fromW = st.w == null ? (toW == null ? el.offsetWidth : toW) : st.w;
+    st.x = fromX; st.w = fromW;
+    const spX = M.springBy(0.34, 0, {
+      from: fromX, to: x, velocity: liveV,
+      onUpdate: function (v) { st.x = v; el.style.transform = "translateX(" + v + "px)"; }
+    });
+    st.stopX = spX.stop;
+    if (toW != null) {
+      const spW = M.springBy(0.34, 0, {
+        from: fromW, to: toW, velocity: 0,
+        onUpdate: function (v) { st.w = v; el.style.width = v + "px"; }
+      });
+      st.stopW = spW.stop;
+    }
+  }
 
   /* ---------- top bar ---------- */
   function renderTop() {
@@ -362,11 +656,17 @@
   function renderSummary() {
     const el = $("#summary");
     if (!el) return;
+    // 手势进行中就别动这里：内容正在跟手，头部高度若同时变化会把两层页面对不齐
+    if (gestureActive) return;
     const date = dateOf(state.week, state.day);
-    if (dayDiff(date, nowD()) !== 0) { el.className = "summary"; el.innerHTML = ""; return; }
+    if (dayDiff(date, nowD()) !== 0) {
+      // 只收起来，不清内容：让收起也有高度过渡，不会"啪"一下消失
+      el.className = "summary";
+      return;
+    }
     const evs = eventsForDate(date, state.week).filter((e) => !e.cancelled);
     if (!evs.length) {
-      el.className = "summary";
+      el.className = "summary on";
       el.innerHTML = `<div class="sum-bar quiet"><span class="sb-n">今天没课，随意安排</span></div>`;
       return;
     }
@@ -394,7 +694,7 @@
       return `<div class="sb-row ${st}"><span class="sb-time">${it.p1t.start}</span><span class="sb-rm" style="--c:${it.col}"></span><span class="sb-nm">${esc(it.ev.name)}</span><span class="sb-loc">${esc(it.ev.room || "")}</span></div>`;
     }).join("");
 
-    el.className = "summary" + (sumOpen ? " open" : "");
+    el.className = "summary" + (sumOpen ? " open" : "") + " on";
     el.innerHTML =
       `<button class="sum-bar" id="sumToggle">${main}<span class="sb-chev">&#8250;</span></button>
        <div class="sum-more"><div class="sb-row head"><span class="sb-time">时间</span><span class="sb-nm">今天 · 共 ${items.length} 节</span></div>${list}</div>`;
@@ -425,12 +725,20 @@
     tabs.slice(days.length).forEach((t) => t.remove());
     days.forEach((d, i) => {
       let el = tabs[i];
-      if (!el) { el = document.createElement("button"); el.className = "daytab"; box.appendChild(el); }
+      if (!el) {
+        el = document.createElement("button");
+        el.className = "daytab";
+        // 节点只建一次：每次重建 innerHTML 会让颜色过渡失效（新节点没有"上一状态"）
+        el.innerHTML = '<span class="d"></span><span class="n"></span><span class="pip"></span>';
+        box.appendChild(el);
+      }
       const date = dateOf(state.week, d);
       el.classList.toggle("today", weekday(today) === d && weekOf(today) === state.week);
       el.classList.toggle("active", state.day === d);
       const evs = eventsForDate(date, state.week);
-      el.innerHTML = `<span class="d">周${DAY_CN[d - 1]}</span><span class="n">${date.getDate()}</span>${evs.length ? '<span class="pip"></span>' : ""}`;
+      el.querySelector(".d").textContent = `周${DAY_CN[d - 1]}`;
+      el.querySelector(".n").textContent = date.getDate();
+      el.querySelector(".pip").classList.toggle("hidden", !evs.length);
       el.onclick = () => { state.day = d; renderAll(); if (state.view === "week") scrollToDay(d); };
     });
     if (box.firstChild !== ind) box.insertBefore(ind, box.firstChild);
@@ -439,11 +747,8 @@
     const box = $("#dayTabs"); const ind = box.querySelector(".dt-ind"); const act = box.querySelector(".daytab.active");
     if (!ind) return;
     if (!act || !act.offsetWidth) { ind.style.opacity = "0"; return; }
-    if (animate === false) ind.style.transition = "none";
     ind.style.opacity = "1";
-    ind.style.width = act.offsetWidth + "px";
-    ind.style.transform = `translateX(${act.offsetLeft}px)`;
-    if (animate === false) requestAnimationFrame(() => { ind.style.transition = ""; });
+    slideIndicator(ind, act.offsetLeft, act.offsetWidth, animate);
   }
 
   /* ---------- day view ---------- */
@@ -458,6 +763,9 @@
     const mkName = mk ? String(mk).replace("调休", "") : "";
     const holiEl = hname ? holiBanner(hname) : mk ? makeupBanner(mk) : null;
     const swapEl = hname ? holidaySwapCard(hkey) : null;
+    // 记下当前进度条宽度：30 秒自动刷新时让它接着长，而不是从 0 重播
+    const prevBar = box.querySelector(".lesson.now .progress i");
+    const prevProgress = prevBar ? (prevBar.style.width || "") : "";
     const prependHead = () => {
       const frag = document.createDocumentFragment();
       if (holiEl) frag.appendChild(holiEl);
@@ -552,8 +860,10 @@
 
       let progress = "";
       if (isNow) {
-        const p = Math.min(100, Math.max(0, ((now - startAt) / (endAt - startAt)) * 100));
-        progress = `<div class="progress"><i style="--p:${p.toFixed(1)}%"></i></div>`;
+        const pct = Math.min(100, Math.max(0, ((now - startAt) / (endAt - startAt)) * 100)).toFixed(1);
+        progress = quietRender
+          ? `<div class="progress"><i style="--p:${pct}%;width:${prevProgress || pct + "%"}"></i></div>`
+          : `<div class="progress"><i class="grow" style="--p:${pct}%"></i></div>`;
       }
 
       card.innerHTML =
@@ -574,8 +884,13 @@
               ? `<div class="wk">${fmtWeeks(ev.weeks, ev.parity)}${ev.note ? " · " + esc(ev.note) : ""}</div>`
               : (ev.note ? `<div class="wk">${esc(ev.note)}</div>` : ""))}
          </div>`;
-      card.onclick = () => openDetail(ev);
+      card.onclick = (e) => openDetail(ev, e.currentTarget);
       box.appendChild(card);
+      if (isNow && quietRender && prevProgress) {
+        const bar = card.querySelector(".progress i");
+        const target = Math.min(100, Math.max(0, ((now - startAt) / (endAt - startAt)) * 100)).toFixed(1) + "%";
+        if (bar) requestAnimationFrame(() => { bar.style.width = target; });
+      }
     });
     if (isTodayDate && !insertedNowLine) addNowLine();
     prependHead();
@@ -749,7 +1064,7 @@
       b.onclick = () => {
         const date = dateOf(state.week, +b.dataset.day);
         const ev = eventsForDate(date, state.week).find((e) => e.key === b.dataset.key);
-        if (ev) openDetail(ev);
+        if (ev) openDetail(ev, b);
       };
     });
     wireWeekDrag(box);
@@ -868,11 +1183,10 @@
 
   /* ---------- render ---------- */
   let lastView = null;
-  function positionIndicator() {
+  function positionIndicator(animate) {
     const sw = $("#viewSwitch"); const ind = sw.querySelector(".ind"); const act = sw.querySelector("button.active");
     if (!ind || !act) return;
-    ind.style.width = act.offsetWidth + "px";
-    ind.style.transform = `translateX(${act.offsetLeft - 3}px)`;
+    slideIndicator(ind, act.offsetLeft - 3, act.offsetWidth, animate);
   }
   let lastRender = { day: null, week: null };
   let _suppressSlide = false;
@@ -918,7 +1232,7 @@
   }
 
   /* ---------- 课程详情：居中「电影票」弹层（两列信息 + 内置操作） ---------- */
-  function openDetail(ev) {
+  function openDetail(ev, srcEl) {
     const c = allCourses().find((x) => x.id === ev.courseId);
     const p1t = perAt(ev.p1), p2t = perAt(ev.p2);
     const d = ev.date, end = p2t ? p2t.end : p1t.end;
@@ -1009,10 +1323,7 @@
          </div>
          <div class="tk2-acts">${acts.join("")}</div>
        </div>`;
-    $("#overlay").classList.add("show");
-    lockScroll(true);
-    void tm.offsetWidth;
-    tm.classList.add("show");
+    openTicket(tm, srcEl);
     tm.onclick = (e) => { if (e.target === tm) closeSheets(); };
     $("#tkClose").onclick = closeSheets;
     tm.querySelectorAll("button[data-act]").forEach((b) => {
@@ -1698,6 +2009,7 @@
 
 
   /* ---------- 日期/周切换：跟手拖动（可随时反悔/回弹）、滚轮、键盘 ---------- */
+  let gestureActive = false;   // 手势进行中：30 秒自动刷新别来插手
   function wireSwipe() {
     const main = document.querySelector("main");
     const busy = () => document.querySelector(".sheet.show") || document.querySelector("#ticketModal.show");
@@ -1718,77 +2030,147 @@
       renderAll(); buzz(9);
     };
 
-    let sx = 0, sy = 0, down = false, engaged = false, suppress = false, view = null;
+    let sx = 0, sy = 0, down = false, engaged = false, suppress = false;
+    let baseView = null, out = null, dual = false, dir0 = 0, newStart = 0, oldEnd = 0;
+    let hist = [], vx = 0, dim = 0, lastX = 0, slideStop = null;
+
+    // 速度要用最近几十毫秒的位置历史算，不能只看松手那一刻
+    const track = (p, t) => {
+      hist.push({ p: p, t: t });
+      while (hist.length > 2 && t - hist[0].t > 90) hist.shift();
+      const a = hist[0], b = hist[hist.length - 1];
+      const dt = (b.t - a.t) / 1000;
+      vx = dt > 0 ? (b.p - a.p) / dt : 0;
+    };
+
+    const resetLayers = () => {
+      if (slideStop) { slideStop(); slideStop = null; }
+      if (out) { out.remove(); out = null; }
+      if (baseView) {
+        baseView.style.transform = "";
+        baseView.style.opacity = "";
+        baseView.classList.remove("sliding");
+      }
+      document.documentElement.classList.remove("dragging");
+      gestureActive = false;
+      dual = false;
+      renderSummary();   // 手势收势后再更新摘要，避免拖动途中头部高度突变
+    };
+
+    // 手指一动就进入"双层"：旧内容留在克隆里，新内容先摆到另一侧，
+    // 所以拖动过程中就能看见下一页，而不是拖开一片空白。
+    const engage = (d) => {
+      engaged = true; suppress = true;
+      baseView = viewEl();
+      dim = main.clientWidth;
+      hist = [{ p: 0, t: performance.now() }];
+      vx = 0; lastX = 0;
+      dir0 = d;
+      baseView.classList.remove("slide-r", "slide-l", "view-anim");
+      baseView.classList.add("sliding");
+      document.documentElement.classList.add("dragging");
+      gestureActive = true;
+      if (d === 1 ? !canNext() : !canPrev()) { dual = false; return; }  // 到头了：只做阻尼
+
+      const parent = baseView.parentElement;
+      const gw = baseView.querySelector(".gridwrap");
+      const curScroll = gw ? gw.scrollLeft : 0;
+      const W = parent.clientWidth;
+      out = baseView.cloneNode(true);
+      out.removeAttribute("id");
+      out.classList.remove("slide-r", "slide-l", "view-anim", "sliding");
+      out.setAttribute("aria-hidden", "true");
+      const st = out.style;
+      st.position = "absolute"; st.top = "0"; st.left = "0"; st.right = "0";
+      st.pointerEvents = "none"; st.transition = "none"; st.zIndex = "3";
+      st.transform = "translateX(0px)";
+      parent.appendChild(out);
+      // 必须先入文档再设滚动位置：游离状态的元素 scrollLeft 会被夹成 0
+      const ogw = out.querySelector(".gridwrap");
+      if (ogw) ogw.scrollLeft = curScroll;
+
+      newStart = d === 1 ? W : -W;
+      oldEnd = d === 1 ? -W : W;
+      quietRender = true;
+      step(d);                              // 动作已经开始，页面随之渲染（标签也一起跟过去）
+      quietRender = false;
+      baseView.style.transform = "translateX(" + newStart + "px)";
+      void parent.offsetWidth;              // 让起点先落地，再从那里驱动
+      dual = true;
+    };
+
     const onMove = (e) => {
       if (!down) return;
       const dx = e.clientX - sx, dy = e.clientY - sy;
       if (!engaged) {
         if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
-        engaged = true; suppress = true; view = viewEl();
-        view.style.transition = "none";
-        view.classList.remove("slide-r", "slide-l", "view-anim");
-        document.documentElement.classList.add("dragging");
+        engage(dx < 0 ? 1 : -1);
       }
-      let d = dx;
-      if ((d > 0 && !canPrev()) || (d < 0 && !canNext())) d *= 0.3; // 边界阻尼
-      view.style.transform = "translateX(" + d + "px)";
-      view.style.opacity = String(Math.max(0.55, 1 - Math.abs(d) / (main.clientWidth * 1.5)));
+      lastX = dx;
+      track(dx, performance.now());
+      if (dual) {
+        // 两张页面 1:1 跟手；拖过一屏之后才开始有阻力
+        let d = dx;
+        if (Math.abs(d) > dim) d = Math.sign(d) * (dim + M.rubberband(Math.abs(d) - dim, dim, .4));
+        out.style.transform = "translateX(" + d + "px)";
+        baseView.style.transform = "translateX(" + (newStart + d) + "px)";
+      } else {
+        let d = dx;
+        if ((d > 0 && !canPrev()) || (d < 0 && !canNext())) d = Math.sign(d) * M.rubberband(Math.abs(d), dim, .55);
+        baseView.style.transform = "translateX(" + d + "px)";
+        baseView.style.opacity = String(Math.max(0.6, 1 - Math.abs(d) / (dim * 1.6)));
+      }
     };
-    const onUp = (e) => {
+
+    const onUp = () => {
       if (!down) return; down = false;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
-      document.documentElement.classList.remove("dragging");
       if (!engaged) return;
-      const dx = e.clientX - sx;
-      const th = Math.min(88, main.clientWidth * 0.24);
-      let dir = 0;
-      if (dx < -th && canNext()) dir = 1;
-      else if (dx > th && canPrev()) dir = -1;
-      if (dir) {
-        // 双层滑动：旧内容继续滑出，新内容从另一侧滑入（连贯、优雅）
-        const parent = view.parentElement;
-        const curGw = view.querySelector(".gridwrap");
-        const curScroll = curGw ? curGw.scrollLeft : 0;
-        const out = view.cloneNode(true);
-        out.removeAttribute("id");
-        out.classList.remove("slide-r", "slide-l", "view-anim");
-        out.setAttribute("aria-hidden", "true");
-        const outGw = out.querySelector(".gridwrap");
-        if (outGw) outGw.scrollLeft = curScroll; // 克隆不保留滚动位置，手动同步
-        const W = parent.clientWidth;
-        const st = out.style;
-        st.position = "absolute"; st.top = "0"; st.left = "0"; st.right = "0";
-        st.pointerEvents = "none"; st.transition = "none"; st.zIndex = "3";
-        st.willChange = "transform"; st.transform = "translateX(" + dx + "px)";
-        parent.appendChild(out);
-        view.style.transition = "none";
-        view.style.opacity = "";
-        view.style.transform = "translateX(" + (dir > 0 ? W : -W) + "px)";
-        quietRender = true;
-        step(dir); // 渲染新内容（不重播逐卡入场）
-        quietRender = false;
-        void view.offsetWidth;
-        const ease = "cubic-bezier(.22,.9,.28,1)";
-        out.style.transition = "transform .32s " + ease;
-        view.style.transition = "transform .32s " + ease;
-        requestAnimationFrame(() => {
-          out.style.transform = "translateX(" + (dir > 0 ? -W : W) + "px)";
-          view.style.transform = "translateX(0)";
-        });
-        setTimeout(() => { out.remove(); view.style.transition = ""; view.style.transform = ""; }, 340);
-      } else {
-        view.style.transition = "transform .26s cubic-bezier(.22,.9,.28,1), opacity .26s ease";
-        view.style.transform = "translateX(0)";
-        view.style.opacity = "1";
-        setTimeout(() => { view.style.transition = ""; view.style.transform = ""; view.style.opacity = ""; }, 270);
+      const dx = lastX, v = vx;
+      const instant = M.reduced();
+
+      if (!dual) {
+        // 已经到头：只把当前页弹回去
+        if (instant) { resetLayers(); return; }
+        slideStop = M.springBy(0.36, 0.08, {
+          from: dx, to: 0, velocity: v,
+          onUpdate: function (val) {
+            baseView.style.transform = "translateX(" + val + "px)";
+            baseView.style.opacity = String(Math.max(0.6, 1 - Math.abs(val) / (dim * 1.6)));
+          },
+          onDone: resetLayers
+        }).stop;
+        return;
       }
-      engaged = false;
+
+      // 翻过去还是翻回来：用动量投影落到哪一半来决定（速度方向优先于位移）
+      const progress = -dir0 * dx / dim;
+      const velToward = -dir0 * v;
+      const projected = progress * dim + (velToward > 0 ? M.project(velToward, .998) : 0);
+      const commit = projected > dim * 0.45 && progress > -0.02;
+
+      if (!commit) { quietRender = true; step(-dir0); quietRender = false; }  // 状态退回（页面在屏幕外，看不见）
+      if (instant) { resetLayers(); return; }
+
+      const outFrom = dx, outTo = commit ? oldEnd : 0;
+      const viewFrom = newStart + dx, viewTo = commit ? 0 : newStart;
+      const denom = outTo - outFrom;
+      const vq = denom !== 0 ? v / denom : 0;   // 相对速度：松手那一刻的手速不丢
+      slideStop = M.springBy(0.36, 0, {
+        from: 0, to: 1, velocity: vq, epsilon: 0.001, velocityEpsilon: 0.05,
+        onUpdate: function (q) {
+          if (out) out.style.transform = "translateX(" + (outFrom + (outTo - outFrom) * q) + "px)";
+          baseView.style.transform = "translateX(" + (viewFrom + (viewTo - viewFrom) * q) + "px)";
+        },
+        onDone: resetLayers
+      }).stop;
     };
     main.addEventListener("pointerdown", (e) => {
       if (busy() || e.button === 2) return;
       if (e.target.closest(".gridwrap")) return;
+      if (slideStop || out) resetLayers();   // 上一段落位还没走完：先归位，再开始新的手势
       sx = e.clientX; sy = e.clientY; down = true; engaged = false; suppress = false;
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
@@ -1945,6 +2327,33 @@
   }
 
   /* ---------- init ---------- */
+  /* ---------- 顶栏：滚动边缘 + 大标题收缩 ---------- */
+  function wireScrollEdge() {
+    const head = document.querySelector(".stickyhead");
+    if (!head) return;
+    let on = false, queued = false;
+    const apply = () => {
+      queued = false;
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      // 用一点回滞，避免在阈值附近来回抖
+      if (!on && y > 26) { on = true; head.classList.add("scrolled"); }
+      else if (on && y < 10) { on = false; head.classList.remove("scrolled"); }
+    };
+    window.addEventListener("scroll", () => {
+      if (!queued) { queued = true; requestAnimationFrame(apply); }
+    }, { passive: true });
+    apply();
+  }
+
+  /* ---------- 按下瞬间就反馈；拖开则取消（提前告诉用户"松手不会触发"） ---------- */
+  function wirePressFeedback() {
+    M.pressable(
+      ".lesson, .grid .blk, .btn, .daytab, .iconbtn, .weekbar .navbtn, .week-pill, .sum-bar, " +
+      ".set-row.act, .cm-row, .cm-act, .tr-del, .fab, .sheet .close, .tk2-close, .mv-cancel, " +
+      ".addsess, .seg button, .swatches .sw, .updatebar"
+    );
+  }
+
   function init() {
     const now = nowD();
     const w = weekOf(now);
@@ -1974,18 +2383,27 @@
     $("#fabAdd").onclick = openAddMenu;
     $("#addCourse").onclick = () => { closeSheets(); setTimeout(() => openCourseForm(null), 180); };
     $("#addEvent").onclick = () => { closeSheets(); setTimeout(() => openEditCustom(null), 180); };
-    window.addEventListener("resize", () => { positionIndicator(); positionDayInd(false); });
+    window.addEventListener("resize", () => {
+      positionIndicator(false); positionDayInd(false);
+      // 转屏后小票要重新算一次"一页"能不能放下
+      const tm = $("#ticketModal");
+      if (tm && tm.classList.contains("show")) fitTicket(tm.querySelector(".tk2"));
+    });
     wireDev(); wireSwipe(); applyIntensity();
+    wireScrollEdge(); wirePressFeedback();
+    $$(".sheet").forEach(wireSheetDrag);
+    wireTicketDrag($("#ticketModal"));
 
     renderTop(); renderAll(); initUpdate();
 
-    const tick = () => {
+    const tick = (first) => {
       $("#brandTerm").textContent = `${greeting()} · 现在 ${clock()}`;
       renderSummary();
-      if (state.view === "day" && dayDiff(dateOf(state.week, state.day), nowD()) === 0) { quietRender = true; renderDay(); quietRender = false; }
+      // 首帧刚渲染过，不必再重建一次 DOM（否则会把入场动画吞掉）
+      if (!first && !gestureActive && state.view === "day" && dayDiff(dateOf(state.week, state.day), nowD()) === 0) { quietRender = true; renderDay(); quietRender = false; }
     };
     setInterval(() => { tick(); scheduleCheck(); }, 30000);
-    tick(); scheduleCheck();
+    tick(true); scheduleCheck();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) { tick(); renderWeekBar(); scheduleCheck(); } });
 
     if ("serviceWorker" in navigator && location.protocol !== "file:") {

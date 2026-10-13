@@ -81,7 +81,7 @@
       <h2 id="dTitle"></h2>
       <div class="sub" id="dSub"></div>
     </div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body">
     <div class="kv" id="dKv"></div>
@@ -94,7 +94,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2 id="eTitle">调整这节课</h2><div class="sub" id="eSub"></div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="eBody"></div>
   <div class="sheet-foot" id="eFoot"></div>
@@ -105,7 +105,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>添加</h2><div class="sub">选一个吧</div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body">
     <div class="actions">
@@ -121,7 +121,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>课程时间</h2><div class="sub">调整每节课的上下课时间</div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="timeBody"></div>
 </div>
@@ -131,7 +131,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>节假日 / 调休</h2><div class="sub">这些日期不上课（顺延/放假）</div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="holiBody"></div>
 </div>
@@ -141,7 +141,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>更新内容</h2><div class="sub" id="clVer"></div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="clBody"></div>
   <div class="sheet-foot" id="clFoot">
@@ -155,7 +155,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>课程管理</h2><div class="sub" id="cmSub"></div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="cmBody"></div>
 </div>
@@ -165,7 +165,7 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>开发者代码</h2><div class="sub" id="devSub">输入后可载入你的个人课表</div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body">
     <div class="field"><label>开发者代码</label><input id="devCode" type="password" autocomplete="off" placeholder="请输入开发者代码" /></div>
@@ -182,13 +182,14 @@
   <div class="handle"></div>
   <div class="shead">
     <div><h2>设置</h2><div class="sub">数据保存在本机，断网可用</div></div>
-    <button class="close" data-close>&#10005;</button>
+    <button class="close" data-close aria-label="关闭">&#10005;</button>
   </div>
   <div class="body" id="sBody"></div>
 </div>
 
 <div class="toast" id="toast"></div>
 
+<script src="js/motion.js"></script>
 <script src="js/core.js"></script>
 <script src="js/holidays.js"></script>
 <script src="js/data.js"></script>
