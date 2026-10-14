@@ -547,6 +547,32 @@ html.dragging, html.dragging * {
 @keyframes grow { from { width: 0; } to { width: var(--p, 0%); } }
 
 /* 下一节：轻底 + 细环，明确但不喧哗 */
+/* ---------- 课间（空档）：把课与课之间的"空"显式画出来 ---------- */
+.brk {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: -4px var(--sp-1) 2px;
+  min-height: 16px;
+  /* 11px 的小字用 text-2 才够对比度（text-3 在这种底色上只有 2.6:1） */
+  color: var(--text-2);
+  font-size: var(--fs-micro); letter-spacing: var(--ls-micro);
+}
+.brk::before, .brk::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.brk .brk-t { flex: none; font-variant-numeric: tabular-nums; }
+.brk .brk-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none;
+  animation: breathe 2.6s ease-in-out infinite;
+}
+.brk.live { color: var(--accent); }
+.brk.live .brk-t { font-weight: 650; }
+.brk.live::before, .brk.live::after { background: color-mix(in srgb, var(--accent) 34%, var(--line)); }
+
+/* 正在上的那张卡里，多一行"下一个课间" */
+.lesson .bk {
+  margin-top: 5px; font-size: var(--fs-micro); letter-spacing: var(--ls-micro);
+  color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.lesson.now .bk { color: color-mix(in srgb, var(--ct, #fff) 84%, transparent); }
+
 .lesson.next {
   background: linear-gradient(135deg,
     color-mix(in srgb, var(--c) 12%, var(--surface)),
@@ -1269,7 +1295,8 @@ html.dragging, html.dragging * {
   /* 位移类入场改为淡入 */
   .lesson, .grid .blk, .view-anim, .lesson .chip { animation: fadeIn var(--dur-quick) var(--ease-enter) both !important; }
   /* 呼吸改为静止（不做循环，避免前庭不适） */
-  .lesson.now, .grid .blk.now, .lesson .live .pulse, .nowline .dot, .sum-bar .sb-dot.pulse {
+  .lesson.now, .grid .blk.now, .lesson .live .pulse, .nowline .dot, .sum-bar .sb-dot.pulse,
+  .brk .brk-dot {
     animation: fadeIn var(--dur-quick) var(--ease-enter) both !important;
   }
   .ticket-modal.show .tk2::after { animation: none !important; }

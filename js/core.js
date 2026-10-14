@@ -27,6 +27,46 @@
   }
 
   // iCal 文本转义 / 折行
+  // 一天里课程之间的空档（课间 / 午休 / 空档）
+  // lessons: [{ start: 分钟, end: 分钟 }]，需按 start 升序；返回空档数组（含前后索引）
+  function findBreaks(lessons, minMinutes) {
+    var min = minMinutes == null ? 2 : minMinutes;
+    var out = [];
+    for (var i = 0; i < lessons.length - 1; i++) {
+      var a = lessons[i], b = lessons[i + 1];
+      var gap = b.start - a.end;
+      if (gap >= min) out.push({ fromIndex: i, toIndex: i + 1, start: a.end, end: b.start, minutes: gap });
+    }
+    return out;
+  }
+
+  // 空档怎么称呼：跨过中午、且长度在 30 分 ~ 4 小时之间的叫午休；
+  // 再长就不是"午休"了（比如 12:15 一直空到晚上），叫空档更诚实；短的就是课间
+  function breakLabel(minutes, startMin, endMin) {
+    if (minutes < 30) return "课间";
+    var noonStart = 11 * 60 + 30, noonEnd = 14 * 60;
+    var spansNoon = startMin < noonEnd && endMin > noonStart;
+    return spansNoon && minutes <= 240 ? "午休" : "空档";
+  }
+
+  // 时长文案：85 → “1 小时 25 分钟”；60 → “1 小时”；5 → “5 分钟”；short 时用“分”
+  function fmtGap(minutes, short) {
+    var m = Math.max(0, Math.round(minutes));
+    var unit = short ? " 分" : " 分钟";
+    var h = Math.floor(m / 60), r = m % 60;
+    if (h && !r) return h + " 小时";
+    if (h) return h + " 小时 " + r + unit;
+    return m + unit;
+  }
+
+  // 当前时刻落在哪个空档里（分钟）
+  function breakAt(breaks, minutesNow) {
+    for (var i = 0; i < breaks.length; i++) {
+      if (minutesNow >= breaks[i].start && minutesNow < breaks[i].end) return breaks[i];
+    }
+    return null;
+  }
+
   function escICS(s) {
     return String(s == null ? "" : s).replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
   }
@@ -58,5 +98,6 @@
     return set;
   }
 
-  return { inWeeks, formatWeeks, escICS, foldICS, addMin, overlaps, findConflicts };
+  return { inWeeks, formatWeeks, escICS, foldICS, addMin, overlaps, findConflicts,
+    findBreaks, breakLabel, fmtGap, breakAt };
 });

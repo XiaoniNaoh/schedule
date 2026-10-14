@@ -42,6 +42,69 @@ t("不重叠不算冲突", () => {
 });
 
 console.log("内置节假日");
+console.log("findBreaks / breakLabel / fmtGap / breakAt");
+const M = (h, m) => h * 60 + m;
+const day = [
+  { start: M(8, 0), end: M(8, 45) },
+  { start: M(8, 50), end: M(9, 35) },
+  { start: M(9, 50), end: M(10, 35) },
+  { start: M(13, 40), end: M(14, 25) },
+];
+t("找出相邻课之间的空档", () => {
+  const b = core.findBreaks(day);
+  assert.deepStrictEqual(b.map((x) => x.minutes), [5, 15, 185]);
+});
+t("空档带上前后索引与起止", () => {
+  const b = core.findBreaks(day);
+  assert.strictEqual(b[0].fromIndex, 0);
+  assert.strictEqual(b[0].toIndex, 1);
+  assert.strictEqual(b[0].start, M(8, 45));
+  assert.strictEqual(b[0].end, M(8, 50));
+});
+t("首尾之外不凭空造空档", () => {
+  assert.strictEqual(core.findBreaks(day).length, 3);
+  assert.strictEqual(core.findBreaks([{ start: 480, end: 525 }]).length, 0);
+  assert.strictEqual(core.findBreaks([]).length, 0);
+});
+t("1 分钟以内不算空档", () => {
+  const b = core.findBreaks([{ start: 480, end: 525 }, { start: 526, end: 570 }]);
+  assert.strictEqual(b.length, 0);
+  const b2 = core.findBreaks([{ start: 480, end: 525 }, { start: 527, end: 570 }], 1);
+  assert.strictEqual(b2.length, 1);
+});
+t("撞课（空档为负）不产生空档", () => {
+  const b = core.findBreaks([{ start: 480, end: 540 }, { start: 530, end: 570 }]);
+  assert.strictEqual(b.length, 0);
+});
+t("短空档叫课间，跨中午的长空档叫午休，其余长空档叫空档", () => {
+  assert.strictEqual(core.breakLabel(15, M(9, 35), M(9, 50)), "课间");
+  assert.strictEqual(core.breakLabel(85, M(12, 15), M(13, 40)), "午休");
+  assert.strictEqual(core.breakLabel(185, M(10, 35), M(13, 40)), "午休");
+  assert.strictEqual(core.breakLabel(50, M(17, 55), M(18, 45)), "空档");
+  assert.strictEqual(core.breakLabel(40, M(10, 0), M(10, 40)), "空档");
+  // 超过 4 小时就不叫午休了：12:15 一直空到 20:25
+  assert.strictEqual(core.breakLabel(490, M(12, 15), M(20, 25)), "空档");
+  assert.strictEqual(core.breakLabel(240, M(12, 15), M(16, 15)), "午休");
+  assert.strictEqual(core.breakLabel(300, M(12, 15), M(17, 15)), "空档");
+});
+t("时长文案：小时与分钟都要好看", () => {
+  assert.strictEqual(core.fmtGap(5), "5 分钟");
+  assert.strictEqual(core.fmtGap(85), "1 小时 25 分钟");
+  assert.strictEqual(core.fmtGap(60), "1 小时");
+  assert.strictEqual(core.fmtGap(185), "3 小时 5 分钟");
+  assert.strictEqual(core.fmtGap(25, true), "25 分");
+  assert.strictEqual(core.fmtGap(0), "0 分钟");
+});
+t("当前时刻落在哪个空档里", () => {
+  const b = core.findBreaks(day);
+  assert.strictEqual(core.breakAt(b, M(9, 40)).minutes, 15);
+  assert.strictEqual(core.breakAt(b, M(9, 50)), null);   // 9:50 已在上课
+  assert.strictEqual(core.breakAt(b, M(8, 47)), b[0]);   // 8:47 在第一个课间里
+  assert.strictEqual(core.breakAt(b, M(13, 39)), b[2]);  // 午休最后一分钟仍算课间
+  assert.strictEqual(core.breakAt(b, M(8, 0)), null);
+  assert.strictEqual(core.breakAt(b, M(12, 0)).minutes, 185);   // 中午在那个 3 小时长空档里
+});
+
 const HOL = require("../js/holidays.js");
 t("国庆节含 10/1-10/7", () => assert.ok([...Array(7)].every((_, i) => HOL.holidays["2026-10-0" + (i + 1)] === "国庆节")));
 t("中秋节 9/25", () => assert.strictEqual(HOL.holidays["2026-09-25"], "中秋节"));
