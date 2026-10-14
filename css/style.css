@@ -856,6 +856,11 @@ html.dragging, html.dragging * {
 .btn.dark { background: #16181e; color: #fff; border: 1px solid rgba(255, 255, 255, .08); }
 .btn.dark.pressed, .btn.dark:active { background: #0b0d11; }
 .btn.row { width: 100%; }
+/* 例外：横向的底部动作栏里不能让某个按钮独占整行，
+   否则它会把后面的按钮挤出可视区（只剩一个按钮 + 横向滚动条）。
+   纵向排列（.actions 之类）由这条 100% 负责撑满 —— <button> 在块级父元素里
+   即使 display:flex 也不会自动撑满（浏览器按 shrink-to-fit 处理），必须显式给宽度。 */
+.sheet-foot .btn.row { width: auto; }
 
 .actions { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-4); }
 .actions-row { display: flex; gap: var(--sp-2); }
