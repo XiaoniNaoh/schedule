@@ -730,21 +730,23 @@ html.dragging, html.dragging * {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: 0 24px 60px -22px rgba(0, 0, 0, .45);
-  /* 从被点的那张卡的位置长出来（空间一致性），而不是无来由地居中放大 */
-  transform: scale(calc(.94 * var(--tk-fit)));
-  transform-origin: 50% var(--from-y, 50%);
-  transition: transform var(--spring-sheet-dur) var(--spring-sheet);
+  /* 入场：居中轻轻放大 + 一点点回弹（原版观感） */
+  transform: scale(calc(.9 * var(--tk-fit)));
+  transition: transform .34s cubic-bezier(.2, 1.25, .4, 1);
   touch-action: none;            /* 整张小票都可以往下拖走 */
 }
 .ticket-modal.show .tk2 { pointer-events: auto; transform: scale(var(--tk-fit)); }
-/* 打印头：一道高光扫过，暗示"小票正在打出来" */
+/* 打印头：一道高光从上扫到下，暗示"小票正在打出来" */
 .tk2::after {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px;
   pointer-events: none; opacity: 0;
   background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c) 55%, #fff), transparent);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .ticket-modal.show .tk2::after { animation: printHead .6s var(--ease-enter) both; }
+  /* 打印出场：整块从票头往下"打"出来（原版动画） */
+  .ticket-modal.show .tk2 { animation: printIn .6s cubic-bezier(.2, .85, .3, 1) both; }
+  .ticket-modal.show .tk2::after { animation: printHead .6s cubic-bezier(.2, .85, .3, 1) both; }
+  @keyframes printIn { 0% { clip-path: inset(0 0 100% 0); } 100% { clip-path: inset(0 0 0 0); } }
   @keyframes printHead { 0% { top: -2px; opacity: .85; } 100% { top: 100%; opacity: 0; } }
 }
 
@@ -1266,6 +1268,7 @@ html.dragging, html.dragging * {
     animation: fadeIn var(--dur-quick) var(--ease-enter) both !important;
   }
   .ticket-modal.show .tk2::after { animation: none !important; }
+  .ticket-modal.show .tk2 { animation: none !important; }   /* 打印出场也停掉，只留淡入 */
   .lesson .progress i.grow { animation: none !important; width: var(--p, 0%); }
   /* 庆祝：保留配色与文案，去掉极光扫动与星光闪烁 */
   .aur, .stars i { animation: none !important; }

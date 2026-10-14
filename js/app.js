@@ -2,8 +2,9 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "4.4.0";
+  const APP_VERSION = "4.4.1";
   const CHANGELOG = [
+    { v: "4.4.1", items: ["课程小票的入场动画换回原来的打印式：整张从票头往下打出来，配一道扫过的高光"] },
     { v: "4.4.0", items: [
       "弹层与课程小票可下拉关闭：跟手、越界有阻力、松手按速度决定去留，随时能反悔",
       "切换日/周与日期标签改为弹簧驱动，可被中途打断并从当前位置继续",
@@ -500,26 +501,12 @@
     const fit = need > avail && need > 0 ? Math.max(0.74, avail / need) : 1;
     const v = Math.round(fit * 1000) / 1000;
     tk.style.setProperty("--tk-fit", String(v));
-    // 缩小的时候必须以中心为原点：原点若在被点卡片的位置，缩放会把卡片顶出视口边缘
-    if (v < 1) tk.style.setProperty("--from-y", "50%");
     tk._fit = v;
     return v;
   }
 
-  function openTicket(tm, srcEl) {
+  function openTicket(tm) {
     const tk = tm.querySelector(".tk2");
-    // 空间一致性：小票从来源卡片的位置展开，而不是无来由地在屏幕中央放大
-    if (tk && srcEl && srcEl.getBoundingClientRect) {
-      // 量的时候先摘掉入场缩放，否则量到的是缩放后的盒子，原点会有偏差
-      tk.style.transform = "none";
-      const tr = tk.getBoundingClientRect();
-      const sr = srcEl.getBoundingClientRect();
-      if (tr.height) {
-        const y = Math.min(Math.max(sr.top + sr.height / 2 - tr.top, 0), tr.height);
-        tk.style.setProperty("--from-y", (y / tr.height * 100).toFixed(1) + "%");
-      }
-      tk.style.transform = "";
-    }
     if (tk) { tk.style.transition = ""; tk.style.transform = ""; tk._y = 0; tk.classList.remove("moving"); }
     const ov = $("#overlay");
     if (ov) ov.classList.add("show");
@@ -884,7 +871,7 @@
               ? `<div class="wk">${fmtWeeks(ev.weeks, ev.parity)}${ev.note ? " · " + esc(ev.note) : ""}</div>`
               : (ev.note ? `<div class="wk">${esc(ev.note)}</div>` : ""))}
          </div>`;
-      card.onclick = (e) => openDetail(ev, e.currentTarget);
+      card.onclick = () => openDetail(ev);
       box.appendChild(card);
       if (isNow && quietRender && prevProgress) {
         const bar = card.querySelector(".progress i");
@@ -1064,7 +1051,7 @@
       b.onclick = () => {
         const date = dateOf(state.week, +b.dataset.day);
         const ev = eventsForDate(date, state.week).find((e) => e.key === b.dataset.key);
-        if (ev) openDetail(ev, b);
+        if (ev) openDetail(ev);
       };
     });
     wireWeekDrag(box);
@@ -1232,7 +1219,7 @@
   }
 
   /* ---------- 课程详情：居中「电影票」弹层（两列信息 + 内置操作） ---------- */
-  function openDetail(ev, srcEl) {
+  function openDetail(ev) {
     const c = allCourses().find((x) => x.id === ev.courseId);
     const p1t = perAt(ev.p1), p2t = perAt(ev.p2);
     const d = ev.date, end = p2t ? p2t.end : p1t.end;
@@ -1323,7 +1310,7 @@
          </div>
          <div class="tk2-acts">${acts.join("")}</div>
        </div>`;
-    openTicket(tm, srcEl);
+    openTicket(tm);
     tm.onclick = (e) => { if (e.target === tm) closeSheets(); };
     $("#tkClose").onclick = closeSheets;
     tm.querySelectorAll("button[data-act]").forEach((b) => {
