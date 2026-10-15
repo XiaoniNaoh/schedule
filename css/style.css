@@ -164,11 +164,12 @@ input, select, textarea { font-family: inherit; }
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  /* 弹层打开时内容后退，建立层级（不只是变暗） */
   transition: transform var(--dur-slow) var(--ease-inplace);
   transform-origin: 50% 0;
 }
-html.sheet-open .app { transform: scale(.982) translateY(4px); }
+/* 弹层打开时主内容"后退"：只用 translate（合成层，不重栅格）。
+   之前用 scale(.982)，整屏缩放会在打开面板那一帧重栅格整个 app —— 实测 900ms 级长帧。 */
+html.sheet-open .app { transform: translate3d(0, 6px, 0); }
 
 main { position: relative; }
 .view { flex: 1; padding: 0 var(--gutter) calc(96px + var(--safe-b)); touch-action: pan-y; }
