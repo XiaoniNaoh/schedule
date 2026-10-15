@@ -572,6 +572,19 @@ html.dragging, html.dragging * {
   color: var(--text-2); font-variant-numeric: tabular-nums;
 }
 .lesson.now .bk { color: color-mix(in srgb, var(--ct, #fff) 84%, transparent); }
+/* 正在这个课间里：这一行点亮（卡片已填色，所以用卡片自己的前景色加深） */
+.lesson .bk.live { display: flex; align-items: center; gap: 6px; font-weight: 650; }
+.lesson .bk.live .brk-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; animation: breathe 2.6s ease-in-out infinite; }
+.lesson.now .bk.live { color: var(--ct, #fff); }
+/* 连排课：列出节与节之间的课间 */
+.lesson .wbk {
+  margin-top: 5px; font-size: var(--fs-micro); letter-spacing: var(--ls-micro);
+  color: var(--text-2); font-variant-numeric: tabular-nums; line-height: 1.5;
+}
+/* 条目内不断行（"10:35 课间 5 分" 不许被劈开），只在条目之间换行 */
+.lesson .wbk-i { white-space: nowrap; }
+.lesson .wbk-s { margin: 0 4px; opacity: .7; }
+.lesson.now .wbk { color: color-mix(in srgb, var(--ct, #fff) 78%, transparent); }
 
 .lesson.next {
   background: linear-gradient(135deg,
@@ -1296,7 +1309,7 @@ html.dragging, html.dragging * {
   .lesson, .grid .blk, .view-anim, .lesson .chip { animation: fadeIn var(--dur-quick) var(--ease-enter) both !important; }
   /* 呼吸改为静止（不做循环，避免前庭不适） */
   .lesson.now, .grid .blk.now, .lesson .live .pulse, .nowline .dot, .sum-bar .sb-dot.pulse,
-  .brk .brk-dot {
+  .brk .brk-dot, .lesson .bk.live .brk-dot {
     animation: fadeIn var(--dur-quick) var(--ease-enter) both !important;
   }
   .ticket-modal.show .tk2::after { animation: none !important; }

@@ -1,5 +1,5 @@
 /* 我的课表 · Service Worker —— 离线缓存 */
-const VERSION = "v4.17.0";
+const VERSION = "v4.18.0";
 const CACHE = "course-schedule-" + VERSION;
 const ASSETS = [
   "./",

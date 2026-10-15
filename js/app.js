@@ -2,8 +2,13 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "4.5.0";
+  const APP_VERSION = "4.6.0";
   const CHANGELOG = [
+    { v: "4.6.0", items: [
+      "课间现在按「节」算：一门连排课（第 1-4 节这种）节与节之间的课间也算进来了",
+      "连排课的卡片会列出它的课间（如「08:45 课间 5 分 · 09:35 课间 15 分」），上课时提示的是最近那个",
+      "正在课间里时，卡片那一行点亮倒数，置顶摘要换成「课间 · 高数 · 10:50 · 15 分」",
+    ] },
     { v: "4.5.0", items: [
       "新增「课间」：课与课之间画一条标尺，写明课间 / 午休 / 空档有多长",
       "上课时告诉你下一个课间几点开始、多久（课卡与置顶摘要都会说）",
@@ -678,22 +683,24 @@
     const live = items.find((it) => now >= it.startAt && now < it.endAt);
     const next = items.find((it) => it.startAt > now);
     // 课间：正在课间时把"还剩多久、下节几点"说清楚；在上课时则预告下一个课间
-    const timed = dayTimed(items);
-    const brks = findBreaks(timed.map((t) => ({ start: t.start, end: t.end })), 2);
+    const slots = daySlots(items);
+    const brks = findBreaks(slots, 2);
     const nowMin = now.getHours() * 60 + now.getMinutes();
     const liveBk = breakAt(brks, nowMin);
 
     let main;
-    if (live) {
+    if (liveBk) {
+      // 正在课间里（含连排课的节间课间）：先说清楚这是课间、还剩多久、几点回到课上
+      const label = breakLabel(liveBk.minutes, liveBk.start, liveBk.end);
+      const nx = slots[liveBk.toIndex];
+      main = `<span class="sb-dot pulse" style="--c:${nx.it.col}"></span><span class="sb-k">${label}</span><span class="sb-n">${esc(nx.it.ev.name)}</span><span class="sb-t">${fromMin(nx.start)} · ${fmtGap(liveBk.minutes, true)}</span>`;
+    } else if (live) {
       const left = Math.max(0, Math.round((live.endAt - now) / 60000));
-      const after = brks.find((b) => timed[b.fromIndex].it === live);
-      const tail = after
-        ? `${fromMin(after.start)} ${breakLabel(after.minutes, after.start, after.end)} ${fmtGap(after.minutes, true)}`
+      const nb = nextBreakFor(brks, slots, live, nowMin);
+      const tail = nb
+        ? `${fromMin(nb.start)} ${breakLabel(nb.minutes, nb.start, nb.end)} ${fmtGap(nb.minutes, true)}`
         : `剩 ${left} 分`;
       main = `<span class="sb-dot pulse" style="--c:${live.col}"></span><span class="sb-k">正在上</span><span class="sb-n">${esc(live.ev.name)}</span><span class="sb-t">${tail}</span>`;
-    } else if (next && liveBk) {
-      const label = breakLabel(liveBk.minutes, liveBk.start, liveBk.end);
-      main = `<span class="sb-dot pulse" style="--c:${next.col}"></span><span class="sb-k">${label}</span><span class="sb-n">${esc(next.ev.name)}</span><span class="sb-t">${next.p1t.start} · ${fmtGap(liveBk.minutes, true)}</span>`;
     } else if (next) {
       const m = Math.max(0, Math.round((next.startAt - now) / 60000));
       main = `<span class="sb-dot" style="--c:${next.col}"></span><span class="sb-k">接下来</span><span class="sb-n">${esc(next.ev.name)}</span><span class="sb-t">${next.p1t.start} · ${m <= 0 ? "马上" : m + " 分后"}</span>`;
@@ -805,11 +812,20 @@
     const nextItem = isTodayDate ? items.find((it) => !it.ev.cancelled && it.startAt > now) : null;
     const conflicts = findConflicts(items.filter((it) => !it.ev.cancelled).map((it) => ({ key: it.ev.key, p1: it.ev.p1, p2: it.ev.p2 })));
 
-    // 课间：算出空档，并挂到"前一节课"上，这样在它下面插一条标尺即可
-    const timed = dayTimed(items);
-    const brks = findBreaks(timed.map((t) => ({ start: t.start, end: t.end })), 2);
+    // 课间：按"节"算空档。同一门课的节间空档留在卡内，跨课的空档插在卡与卡之间
+    const slots = daySlots(items);
+    const brks = findBreaks(slots, 2);
     const brkAfter = new Map();
-    brks.forEach((bk) => brkAfter.set(timed[bk.fromIndex].it, { bk: bk, nextIt: timed[bk.toIndex].it }));
+    const brkIn = new Map();
+    brks.forEach((bk) => {
+      const from = slots[bk.fromIndex], to = slots[bk.toIndex];
+      if (from.it === to.it) {
+        if (!brkIn.has(from.it)) brkIn.set(from.it, []);
+        brkIn.get(from.it).push(bk);
+      } else {
+        brkAfter.set(from.it, { bk: bk, nextIt: to.it });
+      }
+    });
     const nowMin = now.getHours() * 60 + now.getMinutes();
 
     let insertedNowLine = false;
@@ -883,12 +899,22 @@
         const left = Math.max(0, Math.round((endAt - now) / 60000));
         live = `<div class="live"><span class="pulse"></span>进行中 · 还剩 ${left} 分钟</div>`;
       }
-      // 正在上这节：顺手把"下一个课间什么时候、多久"写在下面
+      // 连排课（第 1-4 节这种）：把节与节之间的课间列出来
+      const inList = brkIn.get(it) || [];
+      const bkText = (b) => `${fromMin(b.start)} ${breakLabel(b.minutes, b.start, b.end)} ${fmtGap(b.minutes, true)}`;
+      const wbk = inList.length
+        ? `<div class="wbk"${inList.length > 4 ? ` title="${esc(inList.map(bkText).join(" · "))}"` : ""}>` +
+          inList.slice(0, 4).map((b) => `<span class="wbk-i">${bkText(b)}</span>`).join('<span class="wbk-s">·</span>') +
+          `${inList.length > 4 ? '<span class="wbk-s">…</span>' : ""}</div>`
+        : "";
+      // 正在上这节：顺手把"下一个课间什么时候、多久"写在下面（课内课间优先）
       let brkLine = "";
-      const after = isNow ? brkAfter.get(it) : null;
-      if (after) {
-        brkLine = `<div class="bk">${breakLabel(after.bk.minutes, after.bk.start, after.bk.end)} ` +
-          `${fromMin(after.bk.start)} – ${fromMin(after.bk.end)} · ${fmtGap(after.bk.minutes)}</div>`;
+      const nextBk = isNow ? nextBreakFor(brks, slots, it, nowMin) : null;
+      if (nextBk) {
+        const p = bkPoints(nextBk, nowMin);
+        brkLine = p.live
+          ? `<div class="bk live"><span class="brk-dot"></span>${p.label} · 还剩 ${fmtGap(p.left, true)} · ${fromMin(nextBk.end)} 上课</div>`
+          : `<div class="bk">${p.label} ${fromMin(nextBk.start)} – ${fromMin(nextBk.end)} · ${fmtGap(nextBk.minutes)}</div>`;
       }
 
       let progress = "";
@@ -917,6 +943,7 @@
               ? `<div class="wk">${fmtWeeks(ev.weeks, ev.parity)}${ev.note ? " · " + esc(ev.note) : ""}</div>`
               : (ev.note ? `<div class="wk">${esc(ev.note)}</div>` : ""))}
            ${brkLine}
+           ${wbk}
          </div>`;
       card.onclick = () => openDetail(ev);
       box.appendChild(card);
@@ -1046,12 +1073,35 @@
   const fromMin = (m) => pad(Math.floor(m / 60)) + ":" + pad(m % 60);
 
   /* ---------- 课间（空档）：把"课与课之间的空"画出来 ---------- */
-  // 一天里每节课的起止（分钟）；已取消的课不占时间，所以不参与计算
-  function dayTimed(items) {
-    return items.filter((it) => !it.ev.cancelled)
-      .map((it) => ({ start: toMin(it.p1t.start), end: toMin(it.end), it: it }))
-      .sort((a, b) => a.start - b.start);
+  // 一天的"占用片段"：一门连排（第 1-4 节）会拆成 4 段，
+  // 于是"课与课之间的空"和"同一门课节与节之间的空"用同一套算法算出来。
+  // 已取消的课不占时间，所以不参与计算。
+  function daySlots(items) {
+    const out = [];
+    items.forEach((it) => {
+      if (it.ev.cancelled) return;
+      const last = Math.max(it.ev.p1, it.ev.p2 || it.ev.p1);
+      for (let p = it.ev.p1; p <= last; p++) {
+        const t = perAt(p);
+        out.push({ start: toMin(t.start), end: toMin(t.end), it: it, period: p });
+      }
+    });
+    return out.sort((a, b) => a.start - b.start);
   }
+  // 这门课接下来最近的一个课间：先看课内（节与节之间），再看课后
+  function nextBreakFor(brks, slots, it, nowMin) {
+    for (let i = 0; i < brks.length; i++) {
+      const b = brks[i];
+      if (slots[b.fromIndex].it !== it) continue;
+      if (nowMin < b.end) return b;
+    }
+    return null;
+  }
+  const bkPoints = (brk, nowMin) => ({
+    label: breakLabel(brk.minutes, brk.start, brk.end),
+    live: nowMin >= brk.start && nowMin < brk.end,
+    left: Math.max(0, brk.end - nowMin),
+  });
   // 课间标尺：一条细线 + 居中的时长；正处在课间里时整行点亮并倒数
   function breakRow(bk, nextIt, isTodayDate, now) {
     const label = breakLabel(bk.minutes, bk.start, bk.end);

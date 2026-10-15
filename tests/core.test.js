@@ -104,6 +104,16 @@ t("当前时刻落在哪个空档里", () => {
   assert.strictEqual(core.breakAt(b, M(8, 0)), null);
   assert.strictEqual(core.breakAt(b, M(12, 0)).minutes, 185);   // 中午在那个 3 小时长空档里
 });
+t("同一门课连排（第 1-4 节）时，节与节之间也算空档", () => {
+  // 08:00-08:45 / 08:50-09:35 / 09:50-10:35 / 10:40-11:25
+  const slots = [
+    { start: M(8, 0), end: M(8, 45) },
+    { start: M(8, 50), end: M(9, 35) },
+    { start: M(9, 50), end: M(10, 35) },
+    { start: M(10, 40), end: M(11, 25) },
+  ];
+  assert.deepStrictEqual(core.findBreaks(slots).map((x) => x.minutes), [5, 15, 5]);
+});
 
 const HOL = require("../js/holidays.js");
 t("国庆节含 10/1-10/7", () => assert.ok([...Array(7)].every((_, i) => HOL.holidays["2026-10-0" + (i + 1)] === "国庆节")));
