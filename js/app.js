@@ -2,8 +2,13 @@
 (function () {
   "use strict";
 
-  const APP_VERSION = "4.6.0";
+  const APP_VERSION = "4.6.1";
   const CHANGELOG = [
+    { v: "4.6.1", items: [
+      "移动端流畅度优化：把一直在重绘的呼吸光影改成只动透明度，动画一个没少",
+      "去掉整屏磨砂和隐藏弹层的毛玻璃（手机上很贵），顶栏模糊也收窄了一档",
+      "进度条改走合成层（不再每帧重排）；每 30 秒的重建改成按分钟更新，少一次卡顿",
+    ] },
     { v: "4.6.0", items: [
       "课间现在按「节」算：一门连排课（第 1-4 节这种）节与节之间的课间也算进来了",
       "连排课的卡片会列出它的课间（如「08:45 课间 5 分 · 09:35 课间 15 分」），上课时提示的是最近那个",
@@ -783,7 +788,7 @@
     const swapEl = hname ? holidaySwapCard(hkey) : null;
     // 记下当前进度条宽度：30 秒自动刷新时让它接着长，而不是从 0 重播
     const prevBar = box.querySelector(".lesson.now .progress i");
-    const prevProgress = prevBar ? (prevBar.style.width || "") : "";
+    const prevProgress = prevBar ? (prevBar.style.getPropertyValue("--p") || "") : "";
     const prependHead = () => {
       const frag = document.createDocumentFragment();
       if (holiEl) frag.appendChild(holiEl);
@@ -921,7 +926,7 @@
       if (isNow) {
         const pct = Math.min(100, Math.max(0, ((now - startAt) / (endAt - startAt)) * 100)).toFixed(1);
         progress = quietRender
-          ? `<div class="progress"><i style="--p:${pct}%;width:${prevProgress || pct + "%"}"></i></div>`
+          ? `<div class="progress"><i style="--p:${prevProgress || pct + "%"}"></i></div>`
           : `<div class="progress"><i class="grow" style="--p:${pct}%"></i></div>`;
       }
 
@@ -951,7 +956,8 @@
       if (isNow && quietRender && prevProgress) {
         const bar = card.querySelector(".progress i");
         const target = Math.min(100, Math.max(0, ((now - startAt) / (endAt - startAt)) * 100)).toFixed(1) + "%";
-        if (bar) requestAnimationFrame(() => { bar.style.width = target; });
+        // 用 --p 驱动 scaleX：合成层，不触发布局（原来动 width 每帧都要重排）
+        if (bar) requestAnimationFrame(() => { bar.style.setProperty("--p", target); });
       }
     });
     if (isTodayDate && !insertedNowLine) addNowLine();
@@ -2505,7 +2511,13 @@
 
     renderTop(); renderAll(); initUpdate();
 
+    let lastTickMin = -1;
     const tick = (first) => {
+      // 界面上所有文案都是分钟级的（"还剩 65 分钟"、"现在 10:20"），
+      // 同一分钟内不必重建 DOM —— 每 30 秒整块重排是手机上可感知的一次顿。
+      const m = nowD().getMinutes();
+      if (!first && m === lastTickMin) return;
+      lastTickMin = m;
       $("#brandTerm").textContent = `${greeting()} · 现在 ${clock()}`;
       renderSummary();
       // 首帧刚渲染过，不必再重建一次 DOM（否则会把入场动画吞掉）
